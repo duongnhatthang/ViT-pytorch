@@ -1,3 +1,11 @@
+# Thang's note:
+- Install Nvidia's apex bug: https://github.com/NVIDIA/apex/issues/1702
+```
+# Test cmd:
+python train.py --name mri-test --dataset mri --model_type ViT-B_16 --pretrained_dir checkpoint/ViT-B_16.npz --fp16 --fp16_opt_level O2 --num_workers 0 --train_batch_size 2 --eval_batch_size 2
+
+```
+
 # Vision Transformer
 Pytorch reimplementation of [Google's repository for the ViT model](https://github.com/google-research/vision_transformer) that was released with the paper [An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale](https://arxiv.org/abs/2010.11929) by Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, Jakob Uszkoreit, Neil Houlsby.
 

@@ -36,9 +36,10 @@ def get_loader(args):
     elif args.dataset == "mri":
         augmentor = Compose([
         transforms.Lambda(lambda x: torch.Tensor(x)),
-        RandomRotate(25),
-        RandomTranslate([0.11, 0.11]),
-        RandomFlip(),
+        RandomRotation(25),
+        # RandomTranslate([0.11, 0.11]),
+        RandomHorizontalFlip(),
+        RandomVerticalFlip(),
         transforms.Lambda(lambda x: x.repeat(3, 1, 1, 1).permute(1, 0, 2, 3)),
         #DEBUG: test divide channel here
     ])
@@ -70,12 +71,12 @@ def get_loader(args):
     train_loader = DataLoader(trainset,
                               sampler=train_sampler,
                               batch_size=args.train_batch_size,
-                              num_workers=4,
+                              num_workers=args.num_workers,
                               pin_memory=True)
     test_loader = DataLoader(testset,
                              sampler=test_sampler,
                              batch_size=args.eval_batch_size,
-                             num_workers=4,
+                             num_workers=args.num_workers,
                              pin_memory=True) if testset is not None else None
 
     return train_loader, test_loader
@@ -89,25 +90,26 @@ import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 import torch.utils.data as data
 from torchvision import transforms
-from torchsample.transforms import RandomRotate, RandomTranslate, RandomFlip, ToTensor, Compose, RandomAffine
+from torchvision.transforms import RandomRotation, RandomVerticalFlip, RandomHorizontalFlip, Compose, RandomAffine
+# from torchsample.transforms import RandomRotate, RandomTranslate, RandomFlip, ToTensor, Compose, RandomAffine
 
 
 class MRDataset(data.Dataset):
-    def __init__(self, root_dir, task, plane, train=True, transform=None, weights=None):
+    def __init__(self, root, task, plane, train=True, transform=None, weights=None):
         super().__init__()
         self.task = task
         self.plane = plane
-        self.root_dir = root_dir
+        self.root_dir = root
         self.train = train
         if self.train:
-            self.folder_path = self.root_dir + 'train/{0}/'.format(plane)
+            self.folder_path = self.root_dir + '/train/{0}/'.format(plane)
             self.records = pd.read_csv(
-                self.root_dir + 'train-{0}.csv'.format(task), header=None, names=['id', 'label'])
+                self.root_dir + '/train-{0}.csv'.format(task), header=None, names=['id', 'label'])
         else:
             transform = None
-            self.folder_path = self.root_dir + 'valid/{0}/'.format(plane)
+            self.folder_path = self.root_dir + '/valid/{0}/'.format(plane)
             self.records = pd.read_csv(
-                self.root_dir + 'valid-{0}.csv'.format(task), header=None, names=['id', 'label'])
+                self.root_dir + '/valid-{0}.csv'.format(task), header=None, names=['id', 'label'])
 
         self.records['id'] = self.records['id'].map(
             lambda i: '0' * (4 - len(str(i))) + str(i))
