@@ -21,7 +21,7 @@ from models.modeling import VisionTransformer, CONFIGS
 from utils.scheduler import WarmupLinearSchedule, WarmupCosineSchedule
 from utils.data_utils import get_loader
 from utils.dist_util import get_world_size
-
+from sklearn import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +59,18 @@ def setup(args):
     # Prepare model
     config = CONFIGS[args.model_type]
 
-    num_classes = 10 if args.dataset == "cifar10" else 100
+    # num_classes = 10 if args.dataset == "cifar10" else 100
+    if args.dataset == "mri":
+        num_classes = 2
+    elif args.dataset == "cifar10":
+        num_classes = 10
+    else:
+        num_classes = 100
 
-    model = VisionTransformer(config, args.img_size, zero_head=True, num_classes=num_classes)
+    if args.dataset == "mri":
+        model = MRTransformer(config, args.img_size, zero_head=True, num_classes=num_classes)
+    else:
+        model = VisionTransformer(config, args.img_size, zero_head=True, num_classes=num_classes)
     model.load_from(np.load(args.pretrained_dir))
     model.to(args.device)
     num_params = count_parameters(model)
@@ -104,7 +113,11 @@ def valid(args, model, writer, test_loader, global_step):
     loss_fct = torch.nn.CrossEntropyLoss()
     for step, batch in enumerate(epoch_iterator):
         batch = tuple(t.to(args.device) for t in batch)
-        x, y = batch
+        if args.dataset == "mri":
+            x, y, weight = batch
+            loss_fct = torch.nn.CrossEntropyLoss(weight=weight)
+        else:
+            x, y = batch
         with torch.no_grad():
             logits = model(x)[0]
 
@@ -123,7 +136,11 @@ def valid(args, model, writer, test_loader, global_step):
             all_label[0] = np.append(
                 all_label[0], y.detach().cpu().numpy(), axis=0
             )
-        epoch_iterator.set_description("Validating... (loss=%2.5f)" % eval_losses.val)
+        try:
+            auc = metrics.roc_auc_score(y_trues, y_preds)
+        except:
+            auc = 0.5
+        epoch_iterator.set_description("Validating... (loss=%2.5f | auc=%2.5f)" % (eval_losses.val, np.round(auc, 4)))
 
     all_preds, all_label = all_preds[0], all_label[0]
     accuracy = simple_accuracy(all_preds, all_label)
@@ -133,8 +150,10 @@ def valid(args, model, writer, test_loader, global_step):
     logger.info("Global Steps: %d" % global_step)
     logger.info("Valid Loss: %2.5f" % eval_losses.avg)
     logger.info("Valid Accuracy: %2.5f" % accuracy)
+    logger.info("Valid auc: %2.5f" % np.round(auc, 4))
 
     writer.add_scalar("test/accuracy", scalar_value=accuracy, global_step=global_step)
+    writer.add_scalar("test/auc", scalar_value=np.round(auc, 4), global_step=global_step)
     return accuracy
 
 
@@ -192,8 +211,12 @@ def train(args, model):
                               disable=args.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
             batch = tuple(t.to(args.device) for t in batch)
-            x, y = batch
-            loss = model(x, y)
+            if args.dataset == "mri":
+                x, y, weight = batch
+                loss = model(x, y, weight)
+            else:
+                x, y = batch
+                loss = model(x, y)
 
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
@@ -293,6 +316,10 @@ def main():
                         help="Loss scaling to improve fp16 numeric stability. Only used when fp16 set to True.\n"
                              "0 (default value): dynamic loss scaling.\n"
                              "Positive power of 2: static loss scaling value.\n")
+    parser.add_argument('-t', '--task', type=str, default='abnormal',
+                        choices=['abnormal', 'acl', 'meniscus'])
+    parser.add_argument('-p', '--plane', type=str, default='sagittal',
+                        choices=['sagittal', 'coronal', 'axial'])
     args = parser.parse_args()
 
     # Setup CUDA, GPU & distributed training
