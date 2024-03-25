@@ -34,25 +34,38 @@ def get_loader(args):
                                    download=True,
                                    transform=transform_test) if args.local_rank in [-1, 0] else None
     elif args.dataset == "mri":
-        augmentor = Compose([
-        transforms.Lambda(lambda x: torch.Tensor(x)),
-        RandomRotation(25),
-        # RandomTranslate([0.11, 0.11]),
-        RandomHorizontalFlip(),
-        RandomVerticalFlip(),
-        transforms.Lambda(lambda x: x.repeat(3, 1, 1, 1).permute(1, 0, 2, 3)),
-        #DEBUG: test divide channel here
-    ])
-        trainset = MRDataset(root="./data",
-                                    task=args.task,
-                                    plane=args.plane,
-                                    train=True,
-                                    transform=augmentor)
-        testset = MRDataset(root="./data",
-                                   task=args.task,
-                                   plane=args.plane,
-                                   train=False,
-                                   transform=augmentor)
+    #     augmentor = Compose([
+    #     transforms.Lambda(lambda x: torch.Tensor(x)),
+    #     RandomRotation(25),
+    #     # RandomTranslate([0.11, 0.11]),
+    #     RandomHorizontalFlip(),
+    #     RandomVerticalFlip(),
+    #     transforms.Lambda(lambda x: x.repeat(3, 1, 1, 1).permute(1, 0, 2, 3)),
+    #     #DEBUG: test divide channel here
+    # ])
+        test_split = .02
+        shuffle_dataset = True
+        random_seed= 42
+
+        dataset = MRDataset(root="./data", output_size=args.img_size)
+        dataset_size = len(dataset)
+        indices = list(range(dataset_size))
+        split = int(np.floor(test_split * dataset_size))
+        if shuffle_dataset :
+            np.random.seed(random_seed)
+            np.random.shuffle(indices)
+
+        train_indices, test_indices = indices[split:], indices[:split]
+
+        # Creating PT data samplers and loaders:
+        train_sampler = SubsetRandomSampler(train_indices)
+        test_sampler = SubsetRandomSampler(test_indices)
+
+        train_loader = DataLoader(dataset, batch_size=args.train_batch_size, num_workers=args.num_workers,
+                                  sampler=train_sampler)
+        test_loader = DataLoader(dataset, batch_size=args.eval_batch_size, num_workers=args.num_workers,
+                                 sampler=test_sampler)
+        return train_loader, test_loader
 
     else:
         trainset = datasets.CIFAR100(root="./data",
@@ -92,62 +105,57 @@ import torch.utils.data as data
 from torchvision import transforms
 from torchvision.transforms import RandomRotation, RandomVerticalFlip, RandomHorizontalFlip, Compose, RandomAffine
 # from torchsample.transforms import RandomRotate, RandomTranslate, RandomFlip, ToTensor, Compose, RandomAffine
-
+from torch.utils.data.sampler import SubsetRandomSampler
+from skimage import io, transform
 
 class MRDataset(data.Dataset):
-    def __init__(self, root, task, plane, train=True, transform=None, weights=None):
+    def __init__(self, root, output_size):
         super().__init__()
-        self.task = task
-        self.plane = plane
         self.root_dir = root
-        self.train = train
-        if self.train:
-            self.folder_path = self.root_dir + '/train/{0}/'.format(plane)
-            self.records = pd.read_csv(
-                self.root_dir + '/train-{0}.csv'.format(task), header=None, names=['id', 'label'])
-        else:
-            transform = None
-            self.folder_path = self.root_dir + '/valid/{0}/'.format(plane)
-            self.records = pd.read_csv(
-                self.root_dir + '/valid-{0}.csv'.format(task), header=None, names=['id', 'label'])
+        self.folder_path = self.root_dir + '/data/'
+        self.records = pd.read_csv(self.root_dir + '/labels.csv', header=None, names=['id', 'label'])
 
-        self.records['id'] = self.records['id'].map(
-            lambda i: '0' * (4 - len(str(i))) + str(i))
         self.paths = [self.folder_path + filename +
-                      '.npy' for filename in self.records['id'].tolist()]
-        self.labels = self.records['label'].tolist()
+                      '.npy' for filename in self.records['id'].tolist()[1:]]
+        self.labels = [int(x) for x in self.records['label'].tolist()[1:]]
 
-        self.transform = transform
-        if weights is None:
-            pos = np.sum(self.labels)
-            neg = len(self.labels) - pos
-            self.weights = torch.FloatTensor([1, neg / pos])
-        else:
-            self.weights = torch.FloatTensor(weights)
+        self.output_size = output_size
 
     def __len__(self):
         return len(self.paths)
 
     def __getitem__(self, index):
         array = np.load(self.paths[index])
-        #DEBUG: test x3 here
         label = self.labels[index]
+        out_label = None
         if label == 1:
-            label = torch.FloatTensor([[0, 1]])
+            out_label = np.array([[0, 1, 0, 0]])
         elif label == 0:
-            label = torch.FloatTensor([[1, 0]])
+            out_label = np.array([[1, 0, 0, 0]])
+        elif label == 2:
+            out_label = np.array([[0, 0, 1, 0]])
+        elif label == 3:
+            out_label = np.array([[0, 0, 0, 1]])
 
-        if self.transform:
-            array = self.transform(array)
+        n_slices = array.shape[0]
+        out = np.zeros([n_slices, 3, self.output_size, self.output_size])
+        for i in range(n_slices):
+            out[i] = self._transform_for_one_slice(array[i])
+        return torch.from_numpy(out), torch.from_numpy(out_label.astype(float))
+    
+    def _transform_for_one_slice(self, arr):
+        #Resize
+        h, w = arr.shape
+        if isinstance(self.output_size, int):
+            if h > w:
+                new_h, new_w = self.output_size * h / w, self.output_size
+            else:
+                new_h, new_w = self.output_size, self.output_size * w / h
         else:
-            array = np.stack((array,)*3, axis=1)
-            array = torch.FloatTensor(array)
+            new_h, new_w = self.output_size
 
-        # if label.item() == 1:
-        #     weight = np.array([self.weights[1]])
-        #     weight = torch.FloatTensor(weight)
-        # else:
-        #     weight = np.array([self.weights[0]])
-        #     weight = torch.FloatTensor(weight)
+        new_h, new_w = int(new_h), int(new_w)
 
-        return array, label, self.weights
+        out = transform.resize(arr, (new_h, new_w))
+        out = np.repeat(np.expand_dims(out, axis=0), 3, axis=0)
+        return out

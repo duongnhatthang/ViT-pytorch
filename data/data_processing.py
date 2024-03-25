@@ -30,6 +30,7 @@ def save_paths_to_csv(input_path):
     study_list = list(study)
     label_names = []
     out_path = []
+    out_name = []
     out_labels = []
     for i, id in enumerate(id_list):
         if not isinstance(study_list[i], str) or wave[i] != selected_wave:
@@ -38,11 +39,16 @@ def save_paths_to_csv(input_path):
         label_names.append(name)
         if name in names:
             path_idx = names.index(name)
+            fname = path_list[path_idx].split("/")[-1]
+            out_name.append(fname)
             out_path.append(path_list[path_idx])
-            out_labels.append(es_list[i])
-    out_df = {'path': out_path, 'es': out_labels}
+            out_labels.append(int(es_list[i]))
+    out_df = {'path': out_name, 'es': out_labels}
     out_df = pd.DataFrame(data = out_df)
-    out_df.to_csv("paths_and_labels.csv")
+    out_df.to_csv("labels.csv", index=False)
+    out_path_df = {'path': out_path, 'es': out_labels}
+    out_path_df = pd.DataFrame(data = out_path_df)
+    out_path_df.to_csv("paths_and_labels.csv", index=False)
     # print(len(out_path))
     # print(len(out_labels))
     # print(out_path[:10])
@@ -88,38 +94,60 @@ def read_dicom(path):
     # plt.imshow(dataset.pixel_array, cmap=plt.cm.bone)
     # plt.show()
 
-def processing_data_from_csv_paths(csv_path):
+def _report(cache, min_num_slices, num_continuous_slices):
+    max = -1
+    index = -1
+    l = []
+    for i in range(min_num_slices-num_continuous_slices):
+        cur_sum = np.sum(cache[i:i+num_continuous_slices])
+        if cur_sum > max:
+            max = cur_sum
+            index = i
+        l.append(cur_sum)
+    print(l, np.argmax(l))
+    return index
+
+min_num_slices = 59
+num_continuous_slices = 20
+def processing_data_from_csv_paths(csv_path, min_num_slices, num_continuous_slices):
     df = pd.read_csv(csv_path)
     path_list = list(df['path'])
-    es_list = list(df['es'])
+    # es_list = list(df['es'])
 
-    min_num_slices = 59
-    num_continuous_slices = 20
-    cache = np.zeros((len(path_list), min_num_slices, 384, 384))
-    for i, p in enumerate(tqdm(path_list)):
+    cache = np.zeros((min_num_slices))
+    c=0
+    for p in tqdm(path_list):
         slice_path_list = glob.glob(p+'/'+selected_wave+'/AXLD'+'/*')
 
         for j, slice_path in enumerate(slice_path_list):
-        #     read_dicom(slice_path)
-        #     break
             if j>=min_num_slices:
                 break
             s = pydicom.dcmread(slice_path)
             assert 'PixelData' in s, "PixelData not in s"
-            # print(np.max(s.pixel_array), np.min(s.pixel_array), np.shape(s.pixel_array))
-            # break
-            cache[i,j] = s.pixel_array
-    out = np.sum(cache, axis=-1)
-    out = np.sum(out, axis=-1) #(N, min_num_slices)
-    out = np.sum(out, axis=0) #(min_num_slices)
-    min = np.sum(out)
-    index = -1
-    for i in tqdm(range(min_num_slices-num_continuous_slices)):
-        cur_sum = np.sum(out[i:i+num_continuous_slices])
-        if cur_sum < min:
-            min = cur_sum
-            index = i
+            cache[j] += np.sum(s.pixel_array)
+        c+=1
+        if c%20==0:
+            print(f"Current best: {_report(cache, min_num_slices, num_continuous_slices)}")
+    index = _report(cache, min_num_slices, num_continuous_slices)
     print(f"Choosing slides: {index}:{index+num_continuous_slices}")
 
+start_idx=21
+def zip_files(csv_path, output_path, start_idx, num_continuous_slices):
+    df = pd.read_csv(csv_path)
+    path_list = list(df['path'])
+    for p in tqdm(path_list):
+        slice_path_list = glob.glob(p+'/'+selected_wave+'/AXLD'+'/*')
+        filename = p.split("/")[-1]
+        cache = np.zeros((num_continuous_slices, 384, 384))
+        for j, slice_path in enumerate(slice_path_list):
+            if j<start_idx or j>=start_idx+num_continuous_slices:
+                break
+            s = pydicom.dcmread(slice_path)
+            assert 'PixelData' in s, "PixelData not in s"
+            cache[j-start_idx] = s.pixel_array
+        np.save(f'{output_path}/{filename}.npy', cache)
+
 # save_paths_to_csv("/Volumes/Elements/MOAKS/*")
-processing_data_from_csv_paths("paths_and_labels.csv")
+save_paths_to_csv("/mnt/d/MOAKS/*")
+# processing_data_from_csv_paths("paths_and_labels.csv", min_num_slices, num_continuous_slices)
+# zip_files("paths_and_labels.csv", "./data", start_idx, num_continuous_slices)

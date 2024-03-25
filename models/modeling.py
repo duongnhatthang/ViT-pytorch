@@ -344,20 +344,29 @@ class MRTransformer(nn.Module):
 
         self.transformer = Transformer(config, img_size, vis)
         #DEBUG: test pooling here
-        # self.pooling_layer = nn.AdaptiveAvgPool2d(1)
+        self.pooling_layer = nn.AdaptiveAvgPool2d(1)
         self.head = Linear(config.hidden_size, num_classes)
 
     def forward(self, x, labels=None, weight=None):
-        x, attn_weights = self.transformer(x)
-        logits = self.head(x[:, 0])
-        #DEBUG: test pooling here
+        n_slices = x.shape[1]
+        out_list, attn_weights_list = [], []
+        for i in range(n_slices):
+            out, attn_weights = self.transformer(x[:,i])
+            out_list.append(out)
+            attn_weights_list.append(attn_weights)
+
+        out_mean = torch.mean(torch.stack([x[:,0] for x in out_list]), dim=0)
+        logits = self.head(out_mean)
+
+        # logits = self.head(x[:, 0])
 
         if labels is not None:
             loss_fct = CrossEntropyLoss(weight=weight)
-            loss = loss_fct(logits.view(-1, self.num_classes), labels.view(-1))
+            loss = loss_fct(logits.view(-1, self.num_classes), labels.view(-1, self.num_classes))
+            # loss = loss_fct(logits.view(-1, self.num_classes), labels.view(-1))
             return loss
         else:
-            return logits, attn_weights
+            return logits, attn_weights_list[0] #Temporarily only return the attn_weights of the first slice
 
     def load_from(self, weights):
         with torch.no_grad():

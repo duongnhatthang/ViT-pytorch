@@ -61,7 +61,7 @@ def setup(args):
 
     # num_classes = 10 if args.dataset == "cifar10" else 100
     if args.dataset == "mri":
-        num_classes = 2
+        num_classes = 4
     elif args.dataset == "cifar10":
         num_classes = 10
     else:
@@ -113,15 +113,15 @@ def valid(args, model, writer, test_loader, global_step):
     loss_fct = torch.nn.CrossEntropyLoss()
     for step, batch in enumerate(epoch_iterator):
         batch = tuple(t.to(args.device) for t in batch)
-        if args.dataset == "mri":
-            x, y, weight = batch
-            loss_fct = torch.nn.CrossEntropyLoss(weight=weight)
-        else:
-            x, y = batch
+        x, y = batch
         with torch.no_grad():
             logits = model(x)[0]
 
-            eval_loss = loss_fct(logits, y)
+            if args.dataset == "mri":
+                eval_loss = loss_fct(logits.view(-1, 4), y.view(-1, 4))
+                y = torch.argmax(y, dim=-1)
+            else:
+                eval_loss = loss_fct(logits, y)
             eval_losses.update(eval_loss.item())
 
             preds = torch.argmax(logits, dim=-1)
@@ -137,7 +137,7 @@ def valid(args, model, writer, test_loader, global_step):
                 all_label[0], y.detach().cpu().numpy(), axis=0
             )
         try:
-            auc = metrics.roc_auc_score(y_trues, y_preds)
+            auc = metrics.roc_auc_score(all_label[0], all_preds[0])
         except:
             auc = 0.5
         epoch_iterator.set_description("Validating... (loss=%2.5f | auc=%2.5f)" % (eval_losses.val, np.round(auc, 4)))
@@ -211,12 +211,12 @@ def train(args, model):
                               disable=args.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
             batch = tuple(t.to(args.device) for t in batch)
-            if args.dataset == "mri":
-                x, y, weight = batch
-                loss = model(x, y, weight)
-            else:
-                x, y = batch
-                loss = model(x, y)
+            x, y = batch
+            # x.to(args.device)
+            # print(type(x), type(y))
+            # import pdb; pdb.set_trace()
+            # y.to(args.device)
+            loss = model(x, y)
 
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
@@ -284,12 +284,15 @@ def main():
                         help="Total batch size for training.")
     parser.add_argument("--eval_batch_size", default=64, type=int,
                         help="Total batch size for eval.")
-    parser.add_argument("--eval_every", default=100, type=int,
+    # parser.add_argument("--eval_every", default=100, type=int,
+    parser.add_argument("--eval_every", default=1, type=int,
                         help="Run prediction on validation set every so many steps."
                              "Will always run one evaluation at the end of training.")
 
     parser.add_argument("--learning_rate", default=3e-2, type=float,
                         help="The initial learning rate for SGD.")
+    # parser.add_argument("--learning_rate", default=3e-2, type=float,
+    #                     help="The initial learning rate for SGD.")
     parser.add_argument("--weight_decay", default=0, type=float,
                         help="Weight deay if we apply some.")
     parser.add_argument("--num_steps", default=10000, type=int,
@@ -316,10 +319,6 @@ def main():
                         help="Loss scaling to improve fp16 numeric stability. Only used when fp16 set to True.\n"
                              "0 (default value): dynamic loss scaling.\n"
                              "Positive power of 2: static loss scaling value.\n")
-    parser.add_argument('-t', '--task', type=str, default='abnormal',
-                        choices=['abnormal', 'acl', 'meniscus'])
-    parser.add_argument('-p', '--plane', type=str, default='coronal',
-                        choices=['sagittal', 'coronal', 'axial'])
     parser.add_argument('--num_workers', type=int, default=4,
                         help="Number of worker.")
     args = parser.parse_args()
