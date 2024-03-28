@@ -336,16 +336,15 @@ class VisionTransformer(nn.Module):
                         unit.load_from(weights, n_block=bname, n_unit=uname)
 
 class MRTransformer(nn.Module):
-    def __init__(self, config, img_size=224, num_classes=2, zero_head=False, vis=False):
+    def __init__(self, config, img_size=224, num_classes=4, zero_head=False, vis=False):
         super(MRTransformer, self).__init__()
         self.num_classes = num_classes
         self.zero_head = zero_head
         self.classifier = config.classifier
 
         self.transformer = Transformer(config, img_size, vis)
-        #DEBUG: test pooling here
-        self.pooling_layer = nn.AdaptiveAvgPool2d(1)
-        self.head = Linear(config.hidden_size, num_classes)
+        self.head = Linear(config.hidden_size*20, num_classes)
+        # self.head = Linear(config.hidden_size, num_classes)
 
     def forward(self, x, labels=None, weight=None):
         n_slices = x.shape[1]
@@ -355,15 +354,18 @@ class MRTransformer(nn.Module):
             out_list.append(out)
             attn_weights_list.append(attn_weights)
 
-        out_mean = torch.mean(torch.stack([x[:,0] for x in out_list]), dim=0)
-        logits = self.head(out_mean)
+        cat = out_list[0][:,0]
+        for x in out_list[1:]:
+            cat = torch.cat((cat, x[:,0]), -1)
+        logits = self.head(cat)
+        # out_mean = torch.mean(torch.stack([x[:,0] for x in out_list]), dim=0)
+        # logits = self.head(out_mean)
 
         # logits = self.head(x[:, 0])
 
         if labels is not None:
             loss_fct = CrossEntropyLoss(weight=weight)
             loss = loss_fct(logits.view(-1, self.num_classes), labels.view(-1, self.num_classes))
-            # loss = loss_fct(logits.view(-1, self.num_classes), labels.view(-1))
             return loss
         else:
             return logits, attn_weights_list[0] #Temporarily only return the attn_weights of the first slice

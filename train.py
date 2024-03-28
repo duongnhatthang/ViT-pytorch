@@ -73,11 +73,18 @@ def setup(args):
         model = VisionTransformer(config, args.img_size, zero_head=True, num_classes=num_classes)
     model.load_from(np.load(args.pretrained_dir))
     model.to(args.device)
+
+    # Freeze some layers
+    for param in model.parameters():
+        param.requires_grad = False
+    for param in model.head.parameters():
+        param.requires_grad = True
+
     num_params = count_parameters(model)
 
     logger.info("{}".format(config))
     logger.info("Training parameters %s", args)
-    logger.info("Total Parameter: \t%2.1fM" % num_params)
+    logger.info("Total Parameter: \t%2.4fM" % num_params)
     print(num_params)
     return args, model
 
@@ -284,15 +291,14 @@ def main():
                         help="Total batch size for training.")
     parser.add_argument("--eval_batch_size", default=64, type=int,
                         help="Total batch size for eval.")
-    # parser.add_argument("--eval_every", default=100, type=int,
-    parser.add_argument("--eval_every", default=1, type=int,
+    parser.add_argument("--eval_every", default=100, type=int,
+    # parser.add_argument("--eval_every", default=1, type=int,
                         help="Run prediction on validation set every so many steps."
                              "Will always run one evaluation at the end of training.")
 
-    parser.add_argument("--learning_rate", default=3e-2, type=float,
-                        help="The initial learning rate for SGD.")
+    parser.add_argument("--learning_rate", default=1e-5, type=float,
     # parser.add_argument("--learning_rate", default=3e-2, type=float,
-    #                     help="The initial learning rate for SGD.")
+                        help="The initial learning rate for SGD.")
     parser.add_argument("--weight_decay", default=0, type=float,
                         help="Weight deay if we apply some.")
     parser.add_argument("--num_steps", default=10000, type=int,

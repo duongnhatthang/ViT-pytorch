@@ -43,16 +43,16 @@ def get_loader(args):
     #     transforms.Lambda(lambda x: x.repeat(3, 1, 1, 1).permute(1, 0, 2, 3)),
     #     #DEBUG: test divide channel here
     # ])
-        test_split = .02
+        test_split = .2
         shuffle_dataset = True
-        random_seed= 42
+        # random_seed= 42
 
         dataset = MRDataset(root="./data", output_size=args.img_size)
         dataset_size = len(dataset)
         indices = list(range(dataset_size))
         split = int(np.floor(test_split * dataset_size))
         if shuffle_dataset :
-            np.random.seed(random_seed)
+            # np.random.seed(random_seed)
             np.random.shuffle(indices)
 
         train_indices, test_indices = indices[split:], indices[:split]
