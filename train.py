@@ -88,7 +88,6 @@ def setup(args):
     logger.info("{}".format(config))
     logger.info("Training parameters %s", args)
     logger.info("Total Parameter: \t%2.4fM" % num_params)
-    print(num_params)
     return args, model
 
 

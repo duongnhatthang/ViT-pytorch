@@ -48,10 +48,10 @@ def get_loader(args):
         # # random_seed= 42
         data_path = "/home/thangduong/kneeOA/data/"
         trainset = MRDataset(label_file=data_path+"MOAK20180911_cv0.csv", 
-                            src_path=data_path+"MOAKS_study_npz_top20", 
+                            src_path=data_path+"MOAKS_study_top10", 
                             out_img_size=args.img_size, is_train = True)
         testset = MRDataset(label_file=data_path+"MOAK20180911_cv0.csv", 
-                            src_path=data_path+"MOAKS_study_npz_top20", 
+                            src_path=data_path+"MOAKS_study_top10", 
                             out_img_size=args.img_size, is_train = False)
         # dataset = MRDataset(root="./data", output_size=args.img_size)
         # dataset_size = len(dataset)
@@ -99,11 +99,13 @@ def get_loader(args):
                              pin_memory=True) if testset is not None else None
     return train_loader, test_loader
 
+import numpy as np
+import torch.utils.data as data
+from torchvision import transforms
 
 class MRDataset(data.Dataset):
-    def __init__(self, label_file, src_path, out_img_size=384, dataset=0, mode='multiclass', folder_num=5, is_train = True):
+    def __init__(self, label_file, src_path, out_img_size=224, dataset=0, mode='multiclass', folder_num=5, is_train = True):
         """
-        out_img_size=384 should be fixed since there's some hard-code below
         folder_num is the cross-validation split, temporarily keep here from the legacy code
         """
         super().__init__()
@@ -114,7 +116,8 @@ class MRDataset(data.Dataset):
         self.rotate_degree = 1
         self.shape = (out_img_size, out_img_size)
         self.is_train = is_train
-        label_data, image_data = self.import_data(self, label_file, src_path, dataset, mode, folder_num)
+        self.length = out_img_size * out_img_size
+        label_data, image_data = self.import_data(label_file, src_path, dataset, mode, folder_num)
         self.process_data(label_data, image_data)
         
     def import_data(self, label_file, src_path, dataset=0, mode='multiclass', folder_num=5):
@@ -135,8 +138,11 @@ class MRDataset(data.Dataset):
                 # ignore header
                 if cnt == 0:
                     continue
-                if cnt % 1000 == 0:
+                # if cnt % 1000 == 0:
+                #     logger.info('cnt={}'.format(cnt))
+                if cnt % 250 == 0 and cnt > 1:
                     logger.info('cnt={}'.format(cnt))
+                    break # TODO: for quick debug
                 fields = line.replace('\n', '').split(",")
                 # if fields[0] != dataset_opt[dataset]:
                 #    continue
@@ -172,13 +178,13 @@ class MRDataset(data.Dataset):
                 # load image data
                 awld_file = '{}/{}_axld.npz'.format(src_path, key)
                 load_data = np.load(awld_file)
-                data_list = [np.reshape(x[1][int(x[1].shape[0] / 2) - 192:int(x[1].shape[0] / 2) + 192,
-                                        int(x[1].shape[1] / 2) - 192:int(x[1].shape[1] / 2) + 192], self.length) for x in
+                data_list = [np.reshape(x[1][int(x[1].shape[0] / 2) - self.out_img_size//2:int(x[1].shape[0] / 2) + self.out_img_size//2,
+                                        int(x[1].shape[1] / 2) - self.out_img_size//2:int(x[1].shape[1] / 2) + self.out_img_size//2], self.length) for x in
                             load_data.items()]
 
                 awld_data = np.asmatrix(data_list, dtype=np.float16)
-
-                pv = np.percentile(awld_data, 99) * 2
+                pv = np.percentile(data_list, 99) * 2
+                # pv = np.percentile(awld_data, 99) * 2 #TODO: quick-fix here
                 awld_data[awld_data > pv] = 0
 
                 std = np.std(awld_data, dtype=np.float64)
@@ -214,7 +220,7 @@ class MRDataset(data.Dataset):
             r += 1# Useless?
 
     def __len__(self):
-        return len(self.paths)
+        return len(self.labels)
 
     def __getitem__(self, index):
         # array = np.load(self.paths[index])
@@ -254,9 +260,6 @@ class MRDataset(data.Dataset):
     #     out = np.repeat(np.expand_dims(out, axis=0), 3, axis=0)
     #     return (out-self.mean[slice_idx])/self.std[slice_idx]
 
-# import numpy as np
-# import torch.utils.data as data
-# from torchvision import transforms
 
 # import os
 # import pandas as pd

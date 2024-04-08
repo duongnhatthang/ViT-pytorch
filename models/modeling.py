@@ -343,10 +343,12 @@ class MRTransformer(nn.Module):
         self.pretrained_model = models.alexnet(pretrained=True)
         self.pooling_layer = nn.AdaptiveAvgPool2d(1)
         self.classifer = nn.Linear(256, 4)
+        self.img_size = img_size
 
     def forward(self, x, labels=None):
-        x = torch.squeeze(x, dim=0) 
-        features = self.pretrained_model.features(x)
+        x = torch.squeeze(x, dim=0)
+        features = self.pretrained_model.features(x.view(-1, self.img_size, self.img_size))
+        print(features.shape)
         pooled_features = self.pooling_layer(features)
         pooled_features = pooled_features.view(pooled_features.size(0), -1)
         flattened_features = torch.max(pooled_features, 0, keepdim=True)[0]
