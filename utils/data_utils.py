@@ -109,7 +109,7 @@ from torch.utils.data.sampler import SubsetRandomSampler
 from skimage import io, transform
 
 class MRDataset(data.Dataset):
-    def __init__(self, root, output_size):
+    def __init__(self, root, output_size, mean = None, std = None):
         super().__init__()
         self.root_dir = root
         self.folder_path = self.root_dir + '/data/'
@@ -120,6 +120,20 @@ class MRDataset(data.Dataset):
         self.labels = [int(x) for x in self.records['label'].tolist()[1:]]
 
         self.output_size = output_size
+        if mean is not None:
+            self.mean = mean
+        else:
+            self.mean = [52.71059247, 53.63070621, 54.42507352, 54.9882445,  55.24719491, 55.25069302,
+ 55.05574835, 54.7266365,  54.28619861, 53.81264898, 53.34875302, 52.91868226,
+ 52.5478438,  52.25599246, 52.02444738, 51.87840007, 51.81854203, 51.82532474,
+ 51.89948723, 52.02127323]
+        if std is not None:
+            self.std = std
+        else:
+            self.std = [10.29691447, 10.5882155,  10.78170394, 10.88856715, 10.94099957, 10.90728367,
+ 10.82318519, 10.69989101, 10.53939241, 10.359683,   10.13378993,  9.93059632,
+  9.75945511,  9.61362473,  9.47307353,  9.36288117,  9.29843515,  9.28210771,
+  9.27132131,  9.25777826]
 
     def __len__(self):
         return len(self.paths)
@@ -140,10 +154,10 @@ class MRDataset(data.Dataset):
         n_slices = array.shape[0]
         out = np.zeros([n_slices, 3, self.output_size, self.output_size])
         for i in range(n_slices):
-            out[i] = self._transform_for_one_slice(array[i])
+            out[i] = self._transform_for_one_slice(array[i], i)
         return torch.from_numpy(out), torch.from_numpy(out_label.astype(float))
     
-    def _transform_for_one_slice(self, arr):
+    def _transform_for_one_slice(self, arr, slice_idx):
         #Resize
         h, w = arr.shape
         if isinstance(self.output_size, int):
@@ -158,4 +172,4 @@ class MRDataset(data.Dataset):
 
         out = transform.resize(arr, (new_h, new_w))
         out = np.repeat(np.expand_dims(out, axis=0), 3, axis=0)
-        return out
+        return (out-self.mean[slice_idx])/self.std[slice_idx]

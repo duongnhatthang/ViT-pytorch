@@ -68,17 +68,20 @@ def setup(args):
         num_classes = 100
 
     if args.dataset == "mri":
-        model = MRTransformer(config, args.img_size, zero_head=True, num_classes=num_classes)
+        model = MRTransformer(config, args.img_size, zero_head=True, my_num_classes=num_classes, ViT_num_classes = 100)
     else:
         model = VisionTransformer(config, args.img_size, zero_head=True, num_classes=num_classes)
     model.load_from(np.load(args.pretrained_dir))
     model.to(args.device)
 
-    # Freeze some layers
-    for param in model.parameters():
-        param.requires_grad = False
-    for param in model.head.parameters():
-        param.requires_grad = True
+    # # Freeze some layers
+    # if args.dataset == "mri":
+    #     for param in model.parameters():
+    #         param.requires_grad = False
+    #     for param in model.my_classifer.parameters():
+    #         param.requires_grad = True
+    #     for param in model.head.parameters():
+    #         param.requires_grad = True
 
     num_params = count_parameters(model)
 
@@ -219,10 +222,6 @@ def train(args, model):
         for step, batch in enumerate(epoch_iterator):
             batch = tuple(t.to(args.device) for t in batch)
             x, y = batch
-            # x.to(args.device)
-            # print(type(x), type(y))
-            # import pdb; pdb.set_trace()
-            # y.to(args.device)
             loss = model(x, y)
 
             if args.gradient_accumulation_steps > 1:
@@ -296,8 +295,8 @@ def main():
                         help="Run prediction on validation set every so many steps."
                              "Will always run one evaluation at the end of training.")
 
-    parser.add_argument("--learning_rate", default=1e-5, type=float,
-    # parser.add_argument("--learning_rate", default=3e-2, type=float,
+    # parser.add_argument("--learning_rate", default=1e-5, type=float,
+    parser.add_argument("--learning_rate", default=3e-2, type=float,
                         help="The initial learning rate for SGD.")
     parser.add_argument("--weight_decay", default=0, type=float,
                         help="Weight deay if we apply some.")
