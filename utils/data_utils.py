@@ -43,29 +43,35 @@ def get_loader(args):
     #     transforms.Lambda(lambda x: x.repeat(3, 1, 1, 1).permute(1, 0, 2, 3)),
     #     #DEBUG: test divide channel here
     # ])
-        test_split = .2
-        shuffle_dataset = True
-        # random_seed= 42
+        # test_split = .2
+        # shuffle_dataset = True
+        # # random_seed= 42
+        data_path = "/home/thangduong/kneeOA/data/"
+        trainset = MRDataset(label_file=data_path+"MOAK20180911_cv0.csv", 
+                            src_path=data_path+"MOAKS_study_npz_top20", 
+                            out_img_size=args.img_size, is_train = True)
+        testset = MRDataset(label_file=data_path+"MOAK20180911_cv0.csv", 
+                            src_path=data_path+"MOAKS_study_npz_top20", 
+                            out_img_size=args.img_size, is_train = False)
+        # dataset = MRDataset(root="./data", output_size=args.img_size)
+        # dataset_size = len(dataset)
+        # indices = list(range(dataset_size))
+        # split = int(np.floor(test_split * dataset_size))
+        # if shuffle_dataset :
+        #     # np.random.seed(random_seed)
+        #     np.random.shuffle(indices)
 
-        dataset = MRDataset(root="./data", output_size=args.img_size)
-        dataset_size = len(dataset)
-        indices = list(range(dataset_size))
-        split = int(np.floor(test_split * dataset_size))
-        if shuffle_dataset :
-            # np.random.seed(random_seed)
-            np.random.shuffle(indices)
+        # train_indices, test_indices = indices[split:], indices[:split]
 
-        train_indices, test_indices = indices[split:], indices[:split]
+        # # Creating PT data samplers and loaders:
+        # train_sampler = SubsetRandomSampler(train_indices)
+        # test_sampler = SubsetRandomSampler(test_indices)
 
-        # Creating PT data samplers and loaders:
-        train_sampler = SubsetRandomSampler(train_indices)
-        test_sampler = SubsetRandomSampler(test_indices)
-
-        train_loader = DataLoader(dataset, batch_size=args.train_batch_size, num_workers=args.num_workers,
-                                  sampler=train_sampler)
-        test_loader = DataLoader(dataset, batch_size=args.eval_batch_size, num_workers=args.num_workers,
-                                 sampler=test_sampler)
-        return train_loader, test_loader
+        # train_loader = DataLoader(train_dataset, batch_size=args.train_batch_size, num_workers=args.num_workers,
+        #                           sampler=train_sampler)
+        # test_loader = DataLoader(test_dataset, batch_size=args.eval_batch_size, num_workers=args.num_workers,
+        #                          sampler=test_sampler)
+        # return train_loader, test_loader
 
     else:
         trainset = datasets.CIFAR100(root="./data",
@@ -91,55 +97,127 @@ def get_loader(args):
                              batch_size=args.eval_batch_size,
                              num_workers=args.num_workers,
                              pin_memory=True) if testset is not None else None
-
     return train_loader, test_loader
 
-import os
-import pandas as pd
-import numpy as np
-
-import torch
-import torch.nn.functional as F
-import torchvision.transforms.functional as TF
-import torch.utils.data as data
-from torchvision import transforms
-from torchvision.transforms import RandomRotation, RandomVerticalFlip, RandomHorizontalFlip, Compose, RandomAffine
-# from torchsample.transforms import RandomRotate, RandomTranslate, RandomFlip, ToTensor, Compose, RandomAffine
-from torch.utils.data.sampler import SubsetRandomSampler
-from skimage import io, transform
 
 class MRDataset(data.Dataset):
-    def __init__(self, root, output_size, mean = None, std = None):
+    def __init__(self, label_file, src_path, out_img_size=384, dataset=0, mode='multiclass', folder_num=5, is_train = True):
+        """
+        out_img_size=384 should be fixed since there's some hard-code below
+        folder_num is the cross-validation split, temporarily keep here from the legacy code
+        """
         super().__init__()
-        self.root_dir = root
-        self.folder_path = self.root_dir + '/data/'
-        self.records = pd.read_csv(self.root_dir + '/labels.csv', header=None, names=['id', 'label'])
+        self.out_img_size = out_img_size
+        self.output_size = 4
+        if mode.startswith('binary'):
+            self.output_size = 2
+        self.rotate_degree = 1
+        self.shape = (out_img_size, out_img_size)
+        self.is_train = is_train
+        label_data, image_data = self.import_data(self, label_file, src_path, dataset, mode, folder_num)
+        self.process_data(label_data, image_data)
+        
+    def import_data(self, label_file, src_path, dataset=0, mode='multiclass', folder_num=5):
+        dataset_opt = {
+            0: 'top10',
+            1: 'top15',
+            2: 'top20'
+        }
 
-        self.paths = [self.folder_path + filename +
-                      '.npy' for filename in self.records['id'].tolist()[1:]]
-        self.labels = [int(x) for x in self.records['label'].tolist()[1:]]
+        # (id_L_M, awld_data, label)
+        label_data = [(list(), list(), list()) for x in range(folder_num)]
+        image_data = dict()
+        cnt = -1
+        sample_cnt = 0
+        with open(label_file, "r") as fp:
+            for line in fp:
+                cnt += 1
+                # ignore header
+                if cnt == 0:
+                    continue
+                if cnt % 1000 == 0:
+                    logger.info('cnt={}'.format(cnt))
+                fields = line.replace('\n', '').split(",")
+                # if fields[0] != dataset_opt[dataset]:
+                #    continue
+                group = int(fields[7])
+                if mode == 'multiclass' and group not in (0, 1, 2, 3):
+                    continue
+                if mode == 'binary' and group not in (0, 1, 2, 4):
+                    continue
+                if mode == 'binary2' and group not in (0, 1, 2, 5):
+                    continue
 
-        self.output_size = output_size
-        if mean is not None:
-            self.mean = mean
+                sample_cnt += 1
+
+                cv = int(fields[6])
+                train_data = label_data[cv][0]
+                validation_data = label_data[cv][1]
+                test_data = label_data[cv][2]
+
+                label = int(fields[4])
+
+                key = '{}_{}_{}'.format(fields[1], fields[2], fields[3])
+                if group == 0 or group >= 3:
+                    train_data.append((key, label))
+                elif group == 1:
+                    validation_data.append((key, label))
+                elif group == 2:
+                    test_data.append((key, label))
+
+                # image exists
+                if key in image_data.keys():
+                    continue
+
+                # load image data
+                awld_file = '{}/{}_axld.npz'.format(src_path, key)
+                load_data = np.load(awld_file)
+                data_list = [np.reshape(x[1][int(x[1].shape[0] / 2) - 192:int(x[1].shape[0] / 2) + 192,
+                                        int(x[1].shape[1] / 2) - 192:int(x[1].shape[1] / 2) + 192], self.length) for x in
+                            load_data.items()]
+
+                awld_data = np.asmatrix(data_list, dtype=np.float16)
+
+                pv = np.percentile(awld_data, 99) * 2
+                awld_data[awld_data > pv] = 0
+
+                std = np.std(awld_data, dtype=np.float64)
+                mean = np.mean(awld_data, dtype=np.float64)
+                awld_data_std = (awld_data - mean) / std
+
+                image_data[key] = awld_data_std
+        return label_data, image_data
+    
+    def process_data(self, label_data, image_data):
+        full_label_data, image_data = label_data[0], image_data #label_data[0] = 1st cross-validation set
+        if self.is_train:
+            label_list = full_label_data[0]
         else:
-            self.mean = [52.71059247, 53.63070621, 54.42507352, 54.9882445,  55.24719491, 55.25069302,
- 55.05574835, 54.7266365,  54.28619861, 53.81264898, 53.34875302, 52.91868226,
- 52.5478438,  52.25599246, 52.02444738, 51.87840007, 51.81854203, 51.82532474,
- 51.89948723, 52.02127323]
-        if std is not None:
-            self.std = std
-        else:
-            self.std = [10.29691447, 10.5882155,  10.78170394, 10.88856715, 10.94099957, 10.90728367,
- 10.82318519, 10.69989101, 10.53939241, 10.359683,   10.13378993,  9.93059632,
-  9.75945511,  9.61362473,  9.47307353,  9.36288117,  9.29843515,  9.28210771,
-  9.27132131,  9.25777826]
+            label_list = full_label_data[1]
+
+        self.labels = []
+        self.imgs = []
+
+        for key, label in label_list:
+            if key not in image_data:
+                continue
+            axld_std = image_data[key]
+
+            r = self.rotate_degree % 4
+            axld_list = [np.reshape(np.rot90(np.reshape(x, newshape=self.shape), r), self.length) for x in axld_std.tolist()]
+            axld_data = np.asmatrix(axld_list, dtype=np.float16)
+
+            # train_data.append((axld_data, label))
+            self.labels.append(label)
+            self.imgs.append(axld_data)
+            
+            r += 1# Useless?
 
     def __len__(self):
         return len(self.paths)
 
     def __getitem__(self, index):
-        array = np.load(self.paths[index])
+        # array = np.load(self.paths[index])
         label = self.labels[index]
         out_label = None
         if label == 1:
@@ -151,25 +229,107 @@ class MRDataset(data.Dataset):
         elif label == 3:
             out_label = np.array([[0, 0, 0, 1]])
 
-        n_slices = array.shape[0]
-        out = np.zeros([n_slices, 3, self.output_size, self.output_size])
-        for i in range(n_slices):
-            out[i] = self._transform_for_one_slice(array[i], i)
+        # n_slices = array.shape[0]
+        # out = np.zeros([n_slices, 3, self.output_size, self.output_size])
+        # for i in range(n_slices):
+        #     out[i] = self._transform_for_one_slice(array[i], i)
+        out = self.imgs[index]
+        print(f"MRDataset: out.shape = {out.shape}")
         return torch.from_numpy(out), torch.from_numpy(out_label.astype(float))
     
-    def _transform_for_one_slice(self, arr, slice_idx):
-        #Resize
-        h, w = arr.shape
-        if isinstance(self.output_size, int):
-            if h > w:
-                new_h, new_w = self.output_size * h / w, self.output_size
-            else:
-                new_h, new_w = self.output_size, self.output_size * w / h
-        else:
-            new_h, new_w = self.output_size
+    # def _transform_for_one_slice(self, arr, slice_idx):
+    #     #Resize
+    #     h, w = arr.shape
+    #     if isinstance(self.output_size, int):
+    #         if h > w:
+    #             new_h, new_w = self.output_size * h / w, self.output_size
+    #         else:
+    #             new_h, new_w = self.output_size, self.output_size * w / h
+    #     else:
+    #         new_h, new_w = self.output_size
 
-        new_h, new_w = int(new_h), int(new_w)
+    #     new_h, new_w = int(new_h), int(new_w)
 
-        out = transform.resize(arr, (new_h, new_w))
-        out = np.repeat(np.expand_dims(out, axis=0), 3, axis=0)
-        return (out-self.mean[slice_idx])/self.std[slice_idx]
+    #     out = transform.resize(arr, (new_h, new_w))
+    #     out = np.repeat(np.expand_dims(out, axis=0), 3, axis=0)
+    #     return (out-self.mean[slice_idx])/self.std[slice_idx]
+
+# import numpy as np
+# import torch.utils.data as data
+# from torchvision import transforms
+
+# import os
+# import pandas as pd
+# import torch
+# import torch.nn.functional as F
+# import torchvision.transforms.functional as TF
+# from torchvision.transforms import RandomRotation, RandomVerticalFlip, RandomHorizontalFlip, Compose, RandomAffine
+# # from torchsample.transforms import RandomRotate, RandomTranslate, RandomFlip, ToTensor, Compose, RandomAffine
+# from torch.utils.data.sampler import SubsetRandomSampler
+# from skimage import io, transform
+
+# class MRDataset(data.Dataset):
+#     def __init__(self, root, output_size, mean = None, std = None):
+#         super().__init__()
+#         self.root_dir = root
+#         self.folder_path = self.root_dir + '/data/'
+#         self.records = pd.read_csv(self.root_dir + '/labels.csv', header=None, names=['id', 'label'])
+
+#         self.paths = [self.folder_path + filename +
+#                       '.npy' for filename in self.records['id'].tolist()[1:]]
+#         self.labels = [int(x) for x in self.records['label'].tolist()[1:]]
+
+#         self.output_size = output_size
+#         if mean is not None:
+#             self.mean = mean
+#         else:
+#             self.mean = [52.71059247, 53.63070621, 54.42507352, 54.9882445,  55.24719491, 55.25069302,
+#  55.05574835, 54.7266365,  54.28619861, 53.81264898, 53.34875302, 52.91868226,
+#  52.5478438,  52.25599246, 52.02444738, 51.87840007, 51.81854203, 51.82532474,
+#  51.89948723, 52.02127323]
+#         if std is not None:
+#             self.std = std
+#         else:
+#             self.std = [10.29691447, 10.5882155,  10.78170394, 10.88856715, 10.94099957, 10.90728367,
+#  10.82318519, 10.69989101, 10.53939241, 10.359683,   10.13378993,  9.93059632,
+#   9.75945511,  9.61362473,  9.47307353,  9.36288117,  9.29843515,  9.28210771,
+#   9.27132131,  9.25777826]
+
+#     def __len__(self):
+#         return len(self.paths)
+
+#     def __getitem__(self, index):
+#         array = np.load(self.paths[index])
+#         label = self.labels[index]
+#         out_label = None
+#         if label == 1:
+#             out_label = np.array([[0, 1, 0, 0]])
+#         elif label == 0:
+#             out_label = np.array([[1, 0, 0, 0]])
+#         elif label == 2:
+#             out_label = np.array([[0, 0, 1, 0]])
+#         elif label == 3:
+#             out_label = np.array([[0, 0, 0, 1]])
+
+#         n_slices = array.shape[0]
+#         out = np.zeros([n_slices, 3, self.output_size, self.output_size])
+#         for i in range(n_slices):
+#             out[i] = self._transform_for_one_slice(array[i], i)
+#         return torch.from_numpy(out), torch.from_numpy(out_label.astype(float))
+    
+#     def _transform_for_one_slice(self, arr, slice_idx):
+#         #Resize
+#         h, w = arr.shape
+#         if isinstance(self.output_size, int):
+#             if h > w:
+#                 new_h, new_w = self.output_size * h / w, self.output_size
+#             else:
+#                 new_h, new_w = self.output_size, self.output_size * w / h
+#         else:
+#             new_h, new_w = self.output_size
+
+#         new_h, new_w = int(new_h), int(new_w)
+
+#         out = transform.resize(arr, (new_h, new_w))
+#         out = np.repeat(np.expand_dims(out, axis=0), 3, axis=0)
+#         return (out-self.mean[slice_idx])/self.std[slice_idx]
