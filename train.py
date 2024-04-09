@@ -68,7 +68,8 @@ def setup(args):
         num_classes = 100
 
     if args.dataset == "mri":
-        model = MRTransformer(config, args.img_size, zero_head=True, my_num_classes=num_classes, ViT_num_classes = 100)
+        model = MRTransformer(config, args.img_size, zero_head=True, num_classes=num_classes)
+        # model = MRTransformer(config, args.img_size, zero_head=True, my_num_classes=num_classes)
     else:
         model = VisionTransformer(config, args.img_size, zero_head=True, num_classes=num_classes)
     model.load_from(np.load(args.pretrained_dir))
@@ -283,8 +284,7 @@ def main():
     parser.add_argument("--output_dir", default="output", type=str,
                         help="The output directory where checkpoints will be written.")
 
-    parser.add_argument("--img_size", default=384, type=int,
-    # parser.add_argument("--img_size", default=224, type=int,
+    parser.add_argument("--img_size", default=224, type=int,
                         help="Resolution size")
     parser.add_argument("--train_batch_size", default=512, type=int,
                         help="Total batch size for training.")

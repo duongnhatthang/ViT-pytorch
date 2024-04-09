@@ -34,18 +34,6 @@ def get_loader(args):
                                    download=True,
                                    transform=transform_test) if args.local_rank in [-1, 0] else None
     elif args.dataset == "mri":
-    #     augmentor = Compose([
-    #     transforms.Lambda(lambda x: torch.Tensor(x)),
-    #     RandomRotation(25),
-    #     # RandomTranslate([0.11, 0.11]),
-    #     RandomHorizontalFlip(),
-    #     RandomVerticalFlip(),
-    #     transforms.Lambda(lambda x: x.repeat(3, 1, 1, 1).permute(1, 0, 2, 3)),
-    #     #DEBUG: test divide channel here
-    # ])
-        # test_split = .2
-        # shuffle_dataset = True
-        # # random_seed= 42
         data_path = "/home/thangduong/kneeOA/data/"
         trainset = MRDataset(label_file=data_path+"MOAK20180911_cv0.csv", 
                             src_path=data_path+"MOAKS_study_top10", 
@@ -53,26 +41,6 @@ def get_loader(args):
         testset = MRDataset(label_file=data_path+"MOAK20180911_cv0.csv", 
                             src_path=data_path+"MOAKS_study_top10", 
                             out_img_size=args.img_size, is_train = False)
-        # dataset = MRDataset(root="./data", output_size=args.img_size)
-        # dataset_size = len(dataset)
-        # indices = list(range(dataset_size))
-        # split = int(np.floor(test_split * dataset_size))
-        # if shuffle_dataset :
-        #     # np.random.seed(random_seed)
-        #     np.random.shuffle(indices)
-
-        # train_indices, test_indices = indices[split:], indices[:split]
-
-        # # Creating PT data samplers and loaders:
-        # train_sampler = SubsetRandomSampler(train_indices)
-        # test_sampler = SubsetRandomSampler(test_indices)
-
-        # train_loader = DataLoader(train_dataset, batch_size=args.train_batch_size, num_workers=args.num_workers,
-        #                           sampler=train_sampler)
-        # test_loader = DataLoader(test_dataset, batch_size=args.eval_batch_size, num_workers=args.num_workers,
-        #                          sampler=test_sampler)
-        # return train_loader, test_loader
-
     else:
         trainset = datasets.CIFAR100(root="./data",
                                      train=True,
@@ -102,6 +70,7 @@ def get_loader(args):
 import numpy as np
 import torch.utils.data as data
 from torchvision import transforms
+from skimage import io, transform
 
 class MRDataset(data.Dataset):
     def __init__(self, label_file, src_path, out_img_size=224, dataset=0, mode='multiclass', folder_num=5, is_train = True):
@@ -116,6 +85,7 @@ class MRDataset(data.Dataset):
         self.rotate_degree = 1
         self.shape = (out_img_size, out_img_size)
         self.is_train = is_train
+        self.dataset = dataset
         self.length = out_img_size * out_img_size
         label_data, image_data = self.import_data(label_file, src_path, dataset, mode, folder_num)
         self.process_data(label_data, image_data)
@@ -138,11 +108,13 @@ class MRDataset(data.Dataset):
                 # ignore header
                 if cnt == 0:
                     continue
-                # if cnt % 1000 == 0:
-                #     logger.info('cnt={}'.format(cnt))
-                if cnt % 250 == 0 and cnt > 1:
+                if cnt % 1000 == 0:
                     logger.info('cnt={}'.format(cnt))
-                    break # TODO: for quick debug
+                    
+                # if cnt % 2500 == 0 and cnt > 1:
+                #     logger.info('cnt={}'.format(cnt))
+                #     break # TODO: for quick debug
+                
                 fields = line.replace('\n', '').split(",")
                 # if fields[0] != dataset_opt[dataset]:
                 #    continue
@@ -223,7 +195,6 @@ class MRDataset(data.Dataset):
         return len(self.labels)
 
     def __getitem__(self, index):
-        # array = np.load(self.paths[index])
         label = self.labels[index]
         out_label = None
         if label == 1:
@@ -235,30 +206,35 @@ class MRDataset(data.Dataset):
         elif label == 3:
             out_label = np.array([[0, 0, 0, 1]])
 
-        # n_slices = array.shape[0]
-        # out = np.zeros([n_slices, 3, self.output_size, self.output_size])
-        # for i in range(n_slices):
-        #     out[i] = self._transform_for_one_slice(array[i], i)
-        out = self.imgs[index]
-        print(f"MRDataset: out.shape = {out.shape}")
+        if self.dataset == 0:
+            n_slices = 10
+        elif self.dataset == 1:
+            n_slices = 15
+        else:
+            n_slices = 20
+        out = np.zeros([n_slices, 3, self.out_img_size, self.out_img_size])
+        for i in range(n_slices):
+            out[i] = self._transform_for_one_slice(self.imgs[index][i], i)
         return torch.from_numpy(out), torch.from_numpy(out_label.astype(float))
     
-    # def _transform_for_one_slice(self, arr, slice_idx):
-    #     #Resize
-    #     h, w = arr.shape
-    #     if isinstance(self.output_size, int):
-    #         if h > w:
-    #             new_h, new_w = self.output_size * h / w, self.output_size
-    #         else:
-    #             new_h, new_w = self.output_size, self.output_size * w / h
-    #     else:
-    #         new_h, new_w = self.output_size
+    def _transform_for_one_slice(self, arr, slice_idx):
+        #Resize
+        # h, w = arr.shape
+        h, w = 384, 384
+        if isinstance(self.out_img_size, int):
+            if h > w:
+                new_h, new_w = self.out_img_size * h / w, self.out_img_size
+            else:
+                new_h, new_w = self.out_img_size, self.out_img_size * w / h
+        else:
+            new_h, new_w = self.out_img_size
 
-    #     new_h, new_w = int(new_h), int(new_w)
+        new_h, new_w = int(new_h), int(new_w)
 
-    #     out = transform.resize(arr, (new_h, new_w))
-    #     out = np.repeat(np.expand_dims(out, axis=0), 3, axis=0)
-    #     return (out-self.mean[slice_idx])/self.std[slice_idx]
+        out = transform.resize(arr, (new_h, new_w))
+        out = np.repeat(np.expand_dims(out, axis=0), 3, axis=0)
+        return out
+        # return (out-self.mean[slice_idx])/self.std[slice_idx]
 
 
 # import os
@@ -269,7 +245,6 @@ class MRDataset(data.Dataset):
 # from torchvision.transforms import RandomRotation, RandomVerticalFlip, RandomHorizontalFlip, Compose, RandomAffine
 # # from torchsample.transforms import RandomRotate, RandomTranslate, RandomFlip, ToTensor, Compose, RandomAffine
 # from torch.utils.data.sampler import SubsetRandomSampler
-# from skimage import io, transform
 
 # class MRDataset(data.Dataset):
 #     def __init__(self, root, output_size, mean = None, std = None):

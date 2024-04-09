@@ -335,152 +335,114 @@ class VisionTransformer(nn.Module):
                     for uname, unit in block.named_children():
                         unit.load_from(weights, n_block=bname, n_unit=uname)
 
-from torchvision import models
-class MRTransformer(nn.Module):
-    def __init__(self, config, img_size=224, my_num_classes=4, zero_head=False, vis=False, ViT_num_classes = 100):
-        super().__init__()
-        self.my_num_classes = my_num_classes
-        self.pretrained_model = models.alexnet(pretrained=True)
-        self.pooling_layer = nn.AdaptiveAvgPool2d(1)
-        self.classifer = nn.Linear(256, 4)
-        self.img_size = img_size
-
-    def forward(self, x, labels=None):
-        x = torch.squeeze(x, dim=0)
-        features = self.pretrained_model.features(x.view(-1, self.img_size, self.img_size))
-        print(features.shape)
-        pooled_features = self.pooling_layer(features)
-        pooled_features = pooled_features.view(pooled_features.size(0), -1)
-        flattened_features = torch.max(pooled_features, 0, keepdim=True)[0]
-        output = self.classifer(flattened_features)
-        if labels is not None:
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(output.view(-1, self.my_num_classes), labels.view(-1, self.my_num_classes))
-            return loss
-        else:
-            return output, None
-    
-    def load_from(self, weights):
-        return
-
-# class MRTransformer(VisionTransformer):
-#     def __init__(self, config, img_size=224, my_num_classes=4, zero_head=False, vis=False, ViT_num_classes = 100):
-#         super(MRTransformer, self).__init__(config, img_size, ViT_num_classes, zero_head, vis)
+# from torchvision import models
+# class MRTransformer(nn.Module):
+#     def __init__(self, config, img_size=224, my_num_classes=4, zero_head=False, vis=False):
+#         super().__init__()
 #         self.my_num_classes = my_num_classes
-#         self.pooling_layer = nn.AdaptiveAvgPool2d(1)
-#         self.my_classifer = nn.Linear(184320, my_num_classes)
-#         # self.my_classifer = nn.Linear(ViT_num_classes*20, my_num_classes)
 #         self.pretrained_model = models.alexnet(pretrained=True)
+#         self.pooling_layer = nn.AdaptiveAvgPool2d(1)
+#         self.classifer = nn.Linear(256, 4)
+#         self.img_size = img_size
 
 #     def forward(self, x, labels=None):
-#         # x.shape = (batch_size, 20, 3, 224, 224)
-#         batch_size, n_slice, c, h, w = x.shape
-#         # x, attn_weights = self.transformer(x.view(-1, c, h, w))
-#         # logits = self.head(x[:, 0]) #logits.shape = (batch_size*20, ViT_num_classes)
-
-#         attn_weights = None
-#         logits = self.pretrained_model.features(x.view(-1, c, h, w))
-        
-#         flattened_features = logits.view(batch_size, -1) #flattened_features.shape = (batch_size, ViT_num_classes*20)
-#         output = self.my_classifer(flattened_features)
-#         # print(logits.shape, flattened_features.shape, output.shape)
-
+#         x = torch.squeeze(x, dim=0)
+#         features = self.pretrained_model.features(x)
+#         pooled_features = self.pooling_layer(features)
+#         pooled_features = pooled_features.view(pooled_features.size(0), -1)
+#         flattened_features = torch.max(pooled_features, 0, keepdim=True)[0]
+#         output = self.classifer(flattened_features)
 #         if labels is not None:
 #             loss_fct = CrossEntropyLoss()
 #             loss = loss_fct(output.view(-1, self.my_num_classes), labels.view(-1, self.my_num_classes))
 #             return loss
 #         else:
-#             return output, attn_weights
-
-# class MRTransformer(nn.Module):
-#     def __init__(self, config, img_size=224, num_classes=4, zero_head=False, vis=False):
-#         super(MRTransformer, self).__init__()
-#         self.num_classes = num_classes
-#         self.zero_head = zero_head
-#         self.classifier = config.classifier
-
-#         self.transformer = Transformer(config, img_size, vis)
-#         self.head = Linear(config.hidden_size*20, num_classes)
-#         # self.head = Linear(config.hidden_size, num_classes)
-
-#     def forward(self, x, labels=None, weight=None):
-#         n_slices = x.shape[1]
-#         out_list, attn_weights_list = [], []
-#         for i in range(n_slices):
-#             out, attn_weights = self.transformer(x[:,i])
-#             out_list.append(out)
-#             attn_weights_list.append(attn_weights)
-
-#         cat = out_list[0][:,0]
-#         for x in out_list[1:]:
-#             cat = torch.cat((cat, x[:,0]), -1)
-#         logits = self.head(cat)
-#         # out_mean = torch.mean(torch.stack([x[:,0] for x in out_list]), dim=0)
-#         # logits = self.head(out_mean)
-
-#         # logits = self.head(x[:, 0])
-
-#         if labels is not None:
-#             loss_fct = CrossEntropyLoss(weight=weight)
-#             loss = loss_fct(logits.view(-1, self.num_classes), labels.view(-1, self.num_classes))
-#             return loss
-#         else:
-#             return logits, attn_weights_list[0] #Temporarily only return the attn_weights of the first slice
-
+#             return output, None
+    
 #     def load_from(self, weights):
-#         with torch.no_grad():
-#             if self.zero_head:
-#                 nn.init.zeros_(self.head.weight)
-#                 nn.init.zeros_(self.head.bias)
-#             else:
-#                 self.head.weight.copy_(np2th(weights["head/kernel"]).t())
-#                 self.head.bias.copy_(np2th(weights["head/bias"]).t())
+#         return
 
-#             self.transformer.embeddings.patch_embeddings.weight.copy_(np2th(weights["embedding/kernel"], conv=True))
-#             self.transformer.embeddings.patch_embeddings.bias.copy_(np2th(weights["embedding/bias"]))
-#             self.transformer.embeddings.cls_token.copy_(np2th(weights["cls"]))
-#             self.transformer.encoder.encoder_norm.weight.copy_(np2th(weights["Transformer/encoder_norm/scale"]))
-#             self.transformer.encoder.encoder_norm.bias.copy_(np2th(weights["Transformer/encoder_norm/bias"]))
 
-#             posemb = np2th(weights["Transformer/posembed_input/pos_embedding"])
-#             posemb_new = self.transformer.embeddings.position_embeddings
-#             if posemb.size() == posemb_new.size():
-#                 self.transformer.embeddings.position_embeddings.copy_(posemb)
-#             else:
-#                 logger.info("load_pretrained: resized variant: %s to %s" % (posemb.size(), posemb_new.size()))
-#                 ntok_new = posemb_new.size(1)
+class MRTransformer(nn.Module):
+    def __init__(self, config, img_size=224, num_classes=4, zero_head=False, vis=False):
+        super(MRTransformer, self).__init__()
+        self.num_classes = num_classes
+        self.zero_head = zero_head
+        self.classifier = config.classifier
 
-#                 if self.classifier == "token":
-#                     posemb_tok, posemb_grid = posemb[:, :1], posemb[0, 1:]
-#                     ntok_new -= 1
-#                 else:
-#                     posemb_tok, posemb_grid = posemb[:, :0], posemb[0]
+        self.transformer = Transformer(config, img_size, vis)
+        self.head = Linear(config.hidden_size*197*10, num_classes)
+        # self.head = Linear(config.hidden_size, num_classes)
 
-#                 gs_old = int(np.sqrt(len(posemb_grid)))
-#                 gs_new = int(np.sqrt(ntok_new))
-#                 print('load_pretrained: grid-size from %s to %s' % (gs_old, gs_new))
-#                 posemb_grid = posemb_grid.reshape(gs_old, gs_old, -1)
+    def forward(self, x, labels=None, weight=None):
+        batch_size, n_slice, c, h, w = x.shape
+        x = x.view(-1, c, h, w)
+        out, attn_weights = self.transformer(x)
+        _, w, h = out.shape
+        cat = out.view(batch_size,-1)
+        logits = self.head(cat)
 
-#                 zoom = (gs_new / gs_old, gs_new / gs_old, 1)
-#                 posemb_grid = ndimage.zoom(posemb_grid, zoom, order=1)
-#                 posemb_grid = posemb_grid.reshape(1, gs_new * gs_new, -1)
-#                 posemb = np.concatenate([posemb_tok, posemb_grid], axis=1)
-#                 self.transformer.embeddings.position_embeddings.copy_(np2th(posemb))
+        if labels is not None:
+            loss_fct = CrossEntropyLoss(weight=weight)
+            loss = loss_fct(logits.view(-1, self.num_classes), labels.view(-1, self.num_classes))
+            return loss
+        else:
+            return logits, attn_weights #Temporarily only return the attn_weights of the first slice
 
-#             for bname, block in self.transformer.encoder.named_children():
-#                 for uname, unit in block.named_children():
-#                     unit.load_from(weights, n_block=uname)
+    def load_from(self, weights):
+        with torch.no_grad():
+            if self.zero_head:
+                nn.init.zeros_(self.head.weight)
+                nn.init.zeros_(self.head.bias)
+            else:
+                self.head.weight.copy_(np2th(weights["head/kernel"]).t())
+                self.head.bias.copy_(np2th(weights["head/bias"]).t())
 
-#             if self.transformer.embeddings.hybrid:
-#                 self.transformer.embeddings.hybrid_model.root.conv.weight.copy_(np2th(weights["conv_root/kernel"], conv=True))
-#                 gn_weight = np2th(weights["gn_root/scale"]).view(-1)
-#                 gn_bias = np2th(weights["gn_root/bias"]).view(-1)
-#                 self.transformer.embeddings.hybrid_model.root.gn.weight.copy_(gn_weight)
-#                 self.transformer.embeddings.hybrid_model.root.gn.bias.copy_(gn_bias)
+            self.transformer.embeddings.patch_embeddings.weight.copy_(np2th(weights["embedding/kernel"], conv=True))
+            self.transformer.embeddings.patch_embeddings.bias.copy_(np2th(weights["embedding/bias"]))
+            self.transformer.embeddings.cls_token.copy_(np2th(weights["cls"]))
+            self.transformer.encoder.encoder_norm.weight.copy_(np2th(weights["Transformer/encoder_norm/scale"]))
+            self.transformer.encoder.encoder_norm.bias.copy_(np2th(weights["Transformer/encoder_norm/bias"]))
 
-#                 for bname, block in self.transformer.embeddings.hybrid_model.body.named_children():
-#                     for uname, unit in block.named_children():
-#                         unit.load_from(weights, n_block=bname, n_unit=uname)
+            posemb = np2th(weights["Transformer/posembed_input/pos_embedding"])
+            posemb_new = self.transformer.embeddings.position_embeddings
+            if posemb.size() == posemb_new.size():
+                self.transformer.embeddings.position_embeddings.copy_(posemb)
+            else:
+                logger.info("load_pretrained: resized variant: %s to %s" % (posemb.size(), posemb_new.size()))
+                ntok_new = posemb_new.size(1)
+
+                if self.classifier == "token":
+                    posemb_tok, posemb_grid = posemb[:, :1], posemb[0, 1:]
+                    ntok_new -= 1
+                else:
+                    posemb_tok, posemb_grid = posemb[:, :0], posemb[0]
+
+                gs_old = int(np.sqrt(len(posemb_grid)))
+                gs_new = int(np.sqrt(ntok_new))
+                print('load_pretrained: grid-size from %s to %s' % (gs_old, gs_new))
+                posemb_grid = posemb_grid.reshape(gs_old, gs_old, -1)
+
+                zoom = (gs_new / gs_old, gs_new / gs_old, 1)
+                posemb_grid = ndimage.zoom(posemb_grid, zoom, order=1)
+                posemb_grid = posemb_grid.reshape(1, gs_new * gs_new, -1)
+                posemb = np.concatenate([posemb_tok, posemb_grid], axis=1)
+                self.transformer.embeddings.position_embeddings.copy_(np2th(posemb))
+
+            for bname, block in self.transformer.encoder.named_children():
+                for uname, unit in block.named_children():
+                    unit.load_from(weights, n_block=uname)
+
+            if self.transformer.embeddings.hybrid:
+                self.transformer.embeddings.hybrid_model.root.conv.weight.copy_(np2th(weights["conv_root/kernel"], conv=True))
+                gn_weight = np2th(weights["gn_root/scale"]).view(-1)
+                gn_bias = np2th(weights["gn_root/bias"]).view(-1)
+                self.transformer.embeddings.hybrid_model.root.gn.weight.copy_(gn_weight)
+                self.transformer.embeddings.hybrid_model.root.gn.bias.copy_(gn_bias)
+
+                for bname, block in self.transformer.embeddings.hybrid_model.body.named_children():
+                    for uname, unit in block.named_children():
+                        unit.load_from(weights, n_block=bname, n_unit=uname)
 
 CONFIGS = {
     'ViT-B_16': configs.get_b16_config(),
