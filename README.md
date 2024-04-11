@@ -1,8 +1,10 @@
 # Thang's note:
-- Install Nvidia's apex bug: https://github.com/NVIDIA/apex/issues/1702
+- Install Nvidia's apex bug: https://github.com/NVIDIA/apex/issues/1702 (not happend with python 3.9)
+- sbatch knee.slurm
+- watch -n 1 squeue --job 9530899
 ```
 # Test cmd:
-python train.py --name mri-test --dataset mri --model_type ViT-B_16 --pretrained_dir checkpoint/ViT-B_16.npz --fp16 --fp16_opt_level O2 --num_workers 0 --train_batch_size 2 --eval_batch_size 2
+python train.py --name mri-vit --dataset mri --model_type ViT-B_16 --pretrained_dir checkpoint/ViT-B_16.npz --fp16 --fp16_opt_level O2 --num_workers 4 --train_batch_size 512 --eval_batch_size 512 --learning_rate 0.03
 
 ```
 

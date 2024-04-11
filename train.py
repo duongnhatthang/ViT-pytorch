@@ -21,7 +21,13 @@ from models.modeling import VisionTransformer, CONFIGS, MRTransformer
 from utils.scheduler import WarmupLinearSchedule, WarmupCosineSchedule
 from utils.data_utils import get_loader
 from utils.dist_util import get_world_size
-from sklearn import metrics
+# from sklearn import metrics
+
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import f1_score
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import roc_auc_score
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +120,7 @@ def valid(args, model, writer, test_loader, global_step):
     logger.info("  Batch size = %d", args.eval_batch_size)
 
     model.eval()
-    all_preds, all_label = [], []
+    all_preds, all_label, all_logits = [], [], []
     epoch_iterator = tqdm(test_loader,
                           desc="Validating... (loss=X.X)",
                           bar_format="{l_bar}{r_bar}",
@@ -129,7 +135,7 @@ def valid(args, model, writer, test_loader, global_step):
 
             if args.dataset == "mri":
                 eval_loss = loss_fct(logits.view(-1, 4), y.view(-1, 4))
-                y = torch.argmax(y, dim=-1)
+                # y = torch.argmax(y, dim=-1)
             else:
                 eval_loss = loss_fct(logits, y)
             eval_losses.update(eval_loss.item())
@@ -139,6 +145,7 @@ def valid(args, model, writer, test_loader, global_step):
         if len(all_preds) == 0:
             all_preds.append(preds.detach().cpu().numpy())
             all_label.append(y.detach().cpu().numpy())
+            all_logits.append(logits.detach().cpu().numpy())
         else:
             all_preds[0] = np.append(
                 all_preds[0], preds.detach().cpu().numpy(), axis=0
@@ -146,24 +153,71 @@ def valid(args, model, writer, test_loader, global_step):
             all_label[0] = np.append(
                 all_label[0], y.detach().cpu().numpy(), axis=0
             )
-        try:
-            auc = metrics.roc_auc_score(all_label[0], all_preds[0])
-        except:
-            auc = 0.5
-        epoch_iterator.set_description("Validating... (loss=%2.5f | auc=%2.5f)" % (eval_losses.val, np.round(auc, 4)))
+            all_logits[0] = np.append(
+                all_logits[0], logits.detach().cpu().numpy(), axis=0
+            )
+        epoch_iterator.set_description("Validating... (loss=%2.5f)" % (eval_losses.val))
+    all_preds, all_label, all_logits = all_preds[0], all_label[0], all_logits[0]
+    if args.dataset != "mri":
+        accuracy = simple_accuracy(all_preds, all_label)
+    else:
+        all_pred = (all_logits == all_logits.max(axis=1)[:, None]).astype(int)
+        # tmp_y =np.zeros_like(all_pred)
+        # tmp_idx = np.random.randint(4,size=all_pred.shape[0])
+        # for i in range(all_pred.shape[0]):
+        #     tmp_y[i, tmp_idx[i]] = 1
+        # import pdb; pdb.set_trace()
+        output_size = 4 # Number of classes
+        accuracy = accuracy_score(y_true=all_label, y_pred=all_pred)
+        auc = roc_auc_score(y_true=all_label, y_score=all_logits)
+        macro_auc = roc_auc_score(y_true=all_label, y_score=all_logits, average='macro')
+        micro_auc = roc_auc_score(y_true=all_label, y_score=all_logits, average='micro')
+        precision = precision_score(y_true=all_label, y_pred=all_pred, labels=[x for x in range(output_size)], average=None)
+        recall = recall_score(y_true=all_label, y_pred=all_pred, labels=[x for x in range(output_size)], average=None)
+        fscore = f1_score(y_true=all_label, y_pred=all_pred, labels=[x for x in range(output_size)], average=None)
+        macro_precision = precision_score(y_true=all_label, y_pred=all_pred, labels=[x for x in range(output_size)], average='macro')
+        micro_precision = precision_score(y_true=all_label, y_pred=all_pred, labels=[x for x in range(output_size)], average='micro')
+        macro_recall = recall_score(y_true=all_label, y_pred=all_pred, labels=[x for x in range(output_size)], average='macro')
+        micro_recall = recall_score(y_true=all_label, y_pred=all_pred, labels=[x for x in range(output_size)], average='micro')
+        macro_fscore = f1_score(y_true=all_label, y_pred=all_pred, labels=[x for x in range(output_size)], average='macro')
+        micro_fscore = f1_score(y_true=all_label, y_pred=all_pred, labels=[x for x in range(output_size)], average='micro')
 
-    all_preds, all_label = all_preds[0], all_label[0]
-    accuracy = simple_accuracy(all_preds, all_label)
 
     logger.info("\n")
-    logger.info("Validation Results")
-    logger.info("Global Steps: %d" % global_step)
-    logger.info("Valid Loss: %2.5f" % eval_losses.avg)
-    logger.info("Valid Accuracy: %2.5f" % accuracy)
-    logger.info("Valid auc: %2.5f" % np.round(auc, 4))
+    if args.dataset == "mri":
+        logger.info("=====================final results===========================================")
+        logger.info("accuracy:{}".format(accuracy))
+        logger.info("macro_auc:{}".format(macro_auc))
+        logger.info("micro_auc:{}".format(micro_auc))
+        logger.info("precision:{}".format(precision))
+        logger.info("recall:{}".format(recall))
+        logger.info("fscore:{}".format(fscore))
+        logger.info("macro_precision:{}".format(macro_precision))
+        logger.info("micro_precision:{}".format(micro_precision))
+        logger.info("macro_recall:{}".format(macro_recall))
+        logger.info("micro_recall:{}".format(micro_recall))
+        logger.info("macro_fscore:{}".format(macro_fscore))
+        logger.info("micro_fscore:{}".format(micro_fscore))
 
-    writer.add_scalar("test/accuracy", scalar_value=accuracy, global_step=global_step)
-    writer.add_scalar("test/auc", scalar_value=np.round(auc, 4), global_step=global_step)
+        writer.add_scalar("test/accuracy", scalar_value=accuracy, global_step=global_step)
+        writer.add_scalar("test/macro_auc", scalar_value=macro_auc, global_step=global_step)
+        writer.add_scalar("test/micro_auc", scalar_value=micro_auc, global_step=global_step)
+        writer.add_scalar("test/precision", scalar_value=precision, global_step=global_step)
+        writer.add_scalar("test/recall", scalar_value=recall, global_step=global_step)
+        writer.add_scalar("test/fscore", scalar_value=fscore, global_step=global_step)
+        writer.add_scalar("test/macro_precision", scalar_value=macro_precision, global_step=global_step)
+        writer.add_scalar("test/micro_precision", scalar_value=micro_precision, global_step=global_step)
+        writer.add_scalar("test/macro_recall", scalar_value=macro_recall, global_step=global_step)
+        writer.add_scalar("test/micro_recall", scalar_value=micro_recall, global_step=global_step)
+        writer.add_scalar("test/macro_fscore", scalar_value=macro_fscore, global_step=global_step)
+        writer.add_scalar("test/micro_fscore", scalar_value=micro_fscore, global_step=global_step)
+    else:
+        logger.info("Validation Results")
+        logger.info("Global Steps: %d" % global_step)
+        logger.info("Valid Loss: %2.5f" % eval_losses.avg)
+        logger.info("Valid Accuracy: %2.5f" % accuracy)
+
+        writer.add_scalar("test/accuracy", scalar_value=accuracy, global_step=global_step)
     return accuracy
 
 

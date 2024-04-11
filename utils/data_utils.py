@@ -34,7 +34,8 @@ def get_loader(args):
                                    download=True,
                                    transform=transform_test) if args.local_rank in [-1, 0] else None
     elif args.dataset == "mri":
-        data_path = "/home/thangduong/kneeOA/data/"
+        data_path = "./data/"
+        # data_path = "/home/thangduong/kneeOA/data/"
         trainset = MRDataset(label_file=data_path+"MOAK20180911_cv0.csv", 
                             src_path=data_path+"MOAKS_study_top10", 
                             out_img_size=args.img_size, is_train = True)
@@ -111,7 +112,7 @@ class MRDataset(data.Dataset):
                 if cnt % 1000 == 0:
                     logger.info('cnt={}'.format(cnt))
                     
-                # if cnt % 2500 == 0 and cnt > 1:
+                # if cnt % 150 == 0 and cnt > 1:
                 #     logger.info('cnt={}'.format(cnt))
                 #     break # TODO: for quick debug
                 
@@ -198,13 +199,13 @@ class MRDataset(data.Dataset):
         label = self.labels[index]
         out_label = None
         if label == 1:
-            out_label = np.array([[0, 1, 0, 0]])
+            out_label = np.array([0, 1, 0, 0])
         elif label == 0:
-            out_label = np.array([[1, 0, 0, 0]])
+            out_label = np.array([1, 0, 0, 0])
         elif label == 2:
-            out_label = np.array([[0, 0, 1, 0]])
+            out_label = np.array([0, 0, 1, 0])
         elif label == 3:
-            out_label = np.array([[0, 0, 0, 1]])
+            out_label = np.array([0, 0, 0, 1])
 
         if self.dataset == 0:
             n_slices = 10
