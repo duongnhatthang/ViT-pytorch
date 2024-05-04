@@ -37,11 +37,11 @@ def get_loader(args):
         data_path = "./data/"
         # data_path = "/home/thangduong/kneeOA/data/"
         trainset = MRDataset(label_file=data_path+"MOAK20180911_cv0.csv", 
-                            src_path=data_path+"MOAKS_study_top10", 
-                            out_img_size=args.img_size, is_train = True)
+                            src_path=data_path+"MOAKS_study_top20", 
+                            out_img_size=args.img_size, dataset=2, is_train = True)
         testset = MRDataset(label_file=data_path+"MOAK20180911_cv0.csv", 
-                            src_path=data_path+"MOAKS_study_top10", 
-                            out_img_size=args.img_size, is_train = False)
+                            src_path=data_path+"MOAKS_study_top20", 
+                            out_img_size=args.img_size, dataset=2, is_train = False)
     else:
         trainset = datasets.CIFAR100(root="./data",
                                      train=True,

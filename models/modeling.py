@@ -335,43 +335,47 @@ class VisionTransformer(nn.Module):
                     for uname, unit in block.named_children():
                         unit.load_from(weights, n_block=bname, n_unit=uname)
 
-# from torchvision import models
-# class MRTransformer(nn.Module):
-#     def __init__(self, config, img_size=224, my_num_classes=4, zero_head=False, vis=False):
-#         super().__init__()
-#         self.my_num_classes = my_num_classes
-#         self.pretrained_model = models.alexnet(pretrained=True)
-#         self.pooling_layer = nn.AdaptiveAvgPool2d(1)
-#         self.classifer = nn.Linear(256, 4)
-#         self.img_size = img_size
+from torchvision import models
+class Alexnet(nn.Module):
+    def __init__(self, img_size=224, num_classes=4, top_k=10):
+        super().__init__()
+        self.num_classes = num_classes
+        self.pretrained_model = models.alexnet(pretrained=True)
+        self.pooling_layer = nn.AdaptiveAvgPool2d(1)
+        self.classifer = nn.Linear(256*top_k, 4)
+        self.img_size = img_size
 
-#     def forward(self, x, labels=None):
-#         x = torch.squeeze(x, dim=0)
-#         features = self.pretrained_model.features(x)
-#         pooled_features = self.pooling_layer(features)
-#         pooled_features = pooled_features.view(pooled_features.size(0), -1)
-#         flattened_features = torch.max(pooled_features, 0, keepdim=True)[0]
-#         output = self.classifer(flattened_features)
-#         if labels is not None:
-#             loss_fct = CrossEntropyLoss()
-#             loss = loss_fct(output.view(-1, self.my_num_classes), labels.view(-1, self.my_num_classes))
-#             return loss
-#         else:
-#             return output, None
+    def forward(self, x, labels=None):
+        # x = torch.squeeze(x, dim=0)
+        batch_size, n_slice, c, h, w = x.shape
+        x_reshape = x.view(-1, c, h, w)
+        features = self.pretrained_model.features(x_reshape)
+        pooled_features = self.pooling_layer(features)
+        # pooled_features = pooled_features.view(pooled_features.size(0), -1)
+        pooled_features = pooled_features.view(batch_size, -1)
+        output = self.classifer(pooled_features)
+        # flattened_features = torch.max(pooled_features, 0, keepdim=True)[0]
+        # output = self.classifer(flattened_features)
+        if labels is not None:
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(output.view(-1, self.num_classes), labels.view(-1, self.num_classes))
+            return loss
+        else:
+            return output, None
     
-#     def load_from(self, weights):
-#         return
+    def load_from(self, weights):
+        return
 
 
 class MRTransformer(nn.Module):
-    def __init__(self, config, img_size=224, num_classes=4, zero_head=False, vis=False):
+    def __init__(self, config, img_size=224, num_classes=4, top_k=10, zero_head=False, vis=False):
         super(MRTransformer, self).__init__()
         self.num_classes = num_classes
         self.zero_head = zero_head
         self.classifier = config.classifier
 
         self.transformer = Transformer(config, img_size, vis)
-        self.head = Linear(config.hidden_size*197*10, num_classes)
+        self.head = Linear(config.hidden_size*197*top_k, num_classes)
         # self.head = Linear(config.hidden_size, num_classes)
 
     def forward(self, x, labels=None, weight=None):

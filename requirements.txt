@@ -5,3 +5,4 @@ tensorboard
 ml-collections
 scikit-learn
 scikit-image
+torchvision

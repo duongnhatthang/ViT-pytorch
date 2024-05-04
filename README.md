@@ -1,5 +1,12 @@
 # Thang's note:
 - Install Nvidia's apex bug: https://github.com/NVIDIA/apex/issues/1702 (not happend with python 3.9)
+```
+rm -rf apex
+git clone https://github.com/NVIDIA/apex
+cd apex
+conda install -c nvidia cuda-nvcc
+pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --global-option="--cpp_ext" --global-option="--cuda_ext" ./
+```
 - sbatch knee.slurm
 - watch -n 1 squeue --job 9530899
 ```

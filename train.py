@@ -17,7 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 from apex import amp
 from apex.parallel import DistributedDataParallel as DDP
 
-from models.modeling import VisionTransformer, CONFIGS, MRTransformer
+from models.modeling import VisionTransformer, CONFIGS, MRTransformer, Alexnet
 from utils.scheduler import WarmupLinearSchedule, WarmupCosineSchedule
 from utils.data_utils import get_loader
 from utils.dist_util import get_world_size
@@ -74,8 +74,8 @@ def setup(args):
         num_classes = 100
 
     if args.dataset == "mri":
-        model = MRTransformer(config, args.img_size, zero_head=True, num_classes=num_classes)
-        # model = MRTransformer(config, args.img_size, zero_head=True, my_num_classes=num_classes)
+        # model = Alexnet(args.img_size, num_classes=num_classes, top_k=20)
+        model = MRTransformer(config, args.img_size, zero_head=True, num_classes=num_classes, top_k=20)
     else:
         model = VisionTransformer(config, args.img_size, zero_head=True, num_classes=num_classes)
     model.load_from(np.load(args.pretrained_dir))
@@ -184,8 +184,10 @@ def valid(args, model, writer, test_loader, global_step):
 
 
     logger.info("\n")
+    logger.info("Validation Results")
+    logger.info("Global Steps: %d" % global_step)
+    logger.info("Valid Loss: %2.5f" % eval_losses.avg)
     if args.dataset == "mri":
-        logger.info("=====================final results===========================================")
         logger.info("accuracy:{}".format(accuracy))
         logger.info("macro_auc:{}".format(macro_auc))
         logger.info("micro_auc:{}".format(micro_auc))
@@ -199,12 +201,12 @@ def valid(args, model, writer, test_loader, global_step):
         logger.info("macro_fscore:{}".format(macro_fscore))
         logger.info("micro_fscore:{}".format(micro_fscore))
 
-        writer.add_scalar("test/accuracy", scalar_value=accuracy, global_step=global_step)
+        # writer.add_scalar("test/accuracy", scalar_value=accuracy, global_step=global_step)
         writer.add_scalar("test/macro_auc", scalar_value=macro_auc, global_step=global_step)
         writer.add_scalar("test/micro_auc", scalar_value=micro_auc, global_step=global_step)
-        writer.add_scalar("test/precision", scalar_value=precision, global_step=global_step)
-        writer.add_scalar("test/recall", scalar_value=recall, global_step=global_step)
-        writer.add_scalar("test/fscore", scalar_value=fscore, global_step=global_step)
+        # writer.add_scalar("test/precision", scalar_value=precision, global_step=global_step)
+        # writer.add_scalar("test/recall", scalar_value=recall, global_step=global_step)
+        # writer.add_scalar("test/fscore", scalar_value=fscore, global_step=global_step)
         writer.add_scalar("test/macro_precision", scalar_value=macro_precision, global_step=global_step)
         writer.add_scalar("test/micro_precision", scalar_value=micro_precision, global_step=global_step)
         writer.add_scalar("test/macro_recall", scalar_value=macro_recall, global_step=global_step)
@@ -212,12 +214,8 @@ def valid(args, model, writer, test_loader, global_step):
         writer.add_scalar("test/macro_fscore", scalar_value=macro_fscore, global_step=global_step)
         writer.add_scalar("test/micro_fscore", scalar_value=micro_fscore, global_step=global_step)
     else:
-        logger.info("Validation Results")
-        logger.info("Global Steps: %d" % global_step)
-        logger.info("Valid Loss: %2.5f" % eval_losses.avg)
         logger.info("Valid Accuracy: %2.5f" % accuracy)
-
-        writer.add_scalar("test/accuracy", scalar_value=accuracy, global_step=global_step)
+    writer.add_scalar("test/accuracy", scalar_value=accuracy, global_step=global_step)
     return accuracy
 
 
