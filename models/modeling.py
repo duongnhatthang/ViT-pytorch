@@ -368,23 +368,41 @@ class Alexnet(nn.Module):
 
 
 class MRTransformer(nn.Module):
-    def __init__(self, config, img_size=224, num_classes=4, top_k=10, zero_head=False, vis=False):
+    def __init__(self, config, img_size=224, num_classes=4, top_k=10, zero_head=False, vis=False, original = True, micnn = False):
         super(MRTransformer, self).__init__()
         self.num_classes = num_classes
         self.zero_head = zero_head
         self.classifier = config.classifier
 
         self.transformer = Transformer(config, img_size, vis)
-        self.head = Linear(config.hidden_size*197*top_k, num_classes)
+        self.original = original
+        self.micnn = micnn
+        if self.micnn:
+            self.head = Linear(config.hidden_size, num_classes)
+        else:
+            if self.original:
+                self.head = Linear(config.hidden_size*top_k, num_classes)
+            else:
+                self.head = Linear(config.hidden_size*197*top_k, num_classes)
         # self.head = Linear(config.hidden_size, num_classes)
 
     def forward(self, x, labels=None, weight=None):
         batch_size, n_slice, c, h, w = x.shape
         x = x.view(-1, c, h, w)
         out, attn_weights = self.transformer(x)
-        _, w, h = out.shape
-        cat = out.view(batch_size,-1)
-        logits = self.head(cat)
+        _, w, h = out.shape # (batch_size*n_slice, 197, 768)
+        if self.micnn:
+            out = out[:,0]
+            # out = out.view(batch_size*n_slice,-1)
+            logits_all_slices = self.head(out)
+            logits_reshape = logits_all_slices.reshape((batch_size, n_slice, -1))
+            logits = torch.max(logits_reshape, dim=1)[0]
+        else:
+            if self.original:
+                cat = out[:,0].reshape((batch_size,-1)) # Original, only use MLP head
+            else:
+                cat = out.view(batch_size,-1) # Concatenate n_slice and flatten
+            logits = self.head(cat)
 
         if labels is not None:
             loss_fct = CrossEntropyLoss(weight=weight)
